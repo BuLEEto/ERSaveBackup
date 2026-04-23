@@ -230,7 +230,7 @@ field_row_path :: proc(ctx: ^skald.Ctx(Msg), label, value: string, tip_id: skald
 	MAX :: 56
 	if len(display) > MAX {
 		// Keep the tail — the filename / last folder is the meaningful
-		// part; the /home/lee/.steam/steamapps/compatdata/... prefix is
+		// part; the long ~/.steam/steamapps/compatdata/... prefix is
 		// repetitive and already visible via hover tooltip.
 		display = fmt.tprintf("…%s", display[len(display) - (MAX - 1):])
 	}
