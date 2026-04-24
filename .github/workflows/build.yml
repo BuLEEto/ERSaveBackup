@@ -36,13 +36,13 @@ jobs:
           if command -v apt-get >/dev/null; then
             apt-get update
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-              ca-certificates curl git libvulkan-dev tar xz-utils unzip
+              build-essential ca-certificates curl git libvulkan-dev tar xz-utils unzip
           elif command -v pacman >/dev/null; then
             # Fresh arch containers ship stale signing keys — refresh first.
             pacman -Sy --noconfirm
             pacman -S --noconfirm --needed archlinux-keyring
             pacman -Syu --noconfirm --needed \
-              ca-certificates curl git tar unzip \
+              base-devel ca-certificates curl git tar unzip \
               vulkan-headers vulkan-icd-loader
           else
             echo "Unsupported distro — no apt-get or pacman found" >&2
@@ -103,6 +103,12 @@ jobs:
       - name: Odin version
         shell: bash
         run: odin version
+
+      # The Linux release ships vendor:stb as source; it needs compiling
+      # before any app that imports it will build. Windows ships prebuilt.
+      - name: Compile Odin vendor libraries
+        shell: bash
+        run: make -C /opt/odin/vendor/stb/src
 
       - name: Build
         shell: bash
