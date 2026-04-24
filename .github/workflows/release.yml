@@ -11,24 +11,49 @@ env:
 
 jobs:
   linux:
-    name: Linux amd64
+    name: ${{ matrix.target }}
     runs-on: ubuntu-latest
-    container: ubuntu:24.04
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image:  ubuntu:24.04
+            target: ubuntu-24.04-amd64
+          - image:  debian:13
+            target: debian-13-amd64
+          - image:  archlinux:latest
+            target: arch-amd64
     steps:
       - name: Install prereqs
         shell: bash
         run: |
           set -eux
-          apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            build-essential ca-certificates clang cmake curl git tar xz-utils unzip \
-            libvulkan-dev \
-            libx11-dev libxcursor-dev libxfixes-dev libxrandr-dev libxi-dev
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              build-essential ca-certificates clang cmake curl git tar xz-utils unzip \
+              libvulkan-dev \
+              libx11-dev libxcursor-dev libxfixes-dev libxrandr-dev libxi-dev
+          elif command -v pacman >/dev/null; then
+            pacman -Sy --noconfirm
+            pacman -S --noconfirm --needed archlinux-keyring
+            pacman -Syu --noconfirm --needed \
+              base-devel ca-certificates clang cmake curl git tar unzip \
+              vulkan-headers vulkan-icd-loader \
+              libx11 libxcursor libxfixes libxrandr libxi sdl3
+          fi
 
-      - name: Build and install SDL3
+      - name: Install SDL3
         shell: bash
         run: |
           set -eux
+          if command -v pacman >/dev/null; then
+            echo "SDL3 provided by the sdl3 package"; exit 0
+          fi
+          if apt-get install -y --no-install-recommends libsdl3-dev 2>/dev/null; then
+            echo "libsdl3-dev installed from apt"; exit 0
+          fi
           git clone --depth 1 --branch release-3.2.14 https://github.com/libsdl-org/SDL /tmp/SDL
           cmake -S /tmp/SDL -B /tmp/SDL/build -DCMAKE_BUILD_TYPE=Release -DSDL_TEST_LIBRARY=OFF
           cmake --build /tmp/SDL/build -j"$(nproc)"
@@ -79,13 +104,13 @@ jobs:
         shell: bash
         run: |
           cd ERSaveBackup/build
-          tar -czf ersavebackup-linux-amd64.tar.gz ersavebackup
+          tar -czf ersavebackup-${{ matrix.target }}.tar.gz ersavebackup
           ls -la
 
       - uses: actions/upload-artifact@v4
         with:
-          name: linux
-          path: ERSaveBackup/build/ersavebackup-linux-amd64.tar.gz
+          name: linux-${{ matrix.target }}
+          path: ERSaveBackup/build/ersavebackup-${{ matrix.target }}.tar.gz
 
   windows:
     name: Windows amd64
@@ -159,20 +184,28 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/linux/ersavebackup-linux-amd64.tar.gz
-            dist/windows/ersavebackup-windows-amd64.zip
+            dist/**/*.tar.gz
+            dist/**/*.zip
           body: |
             ## Installing
 
+            Pick the download that matches your system.
+
             **Linux (x86_64):** extract the tarball and run the binary. You need
-            `libSDL3` (≥ 3.2.10) and a working Vulkan loader installed — both come
-            from recent GPU drivers, or install your distro's `libsdl3` / `vulkan`
-            packages. The binary was built against glibc from Ubuntu 24.04, so
-            anything that old or newer should run it.
+            `libSDL3` (≥ 3.2.10) and a Vulkan loader installed — both come from
+            recent GPU drivers, or from your distro's `libsdl3` / `vulkan` packages.
 
-            **Windows (x86_64):** extract the zip and run `ersavebackup.exe`.
-            `SDL3.dll` is bundled alongside. You need a Vulkan loader, which
-            comes with any recent GPU driver — if `vulkaninfo` works in a
-            command prompt you're set.
+            - `ersavebackup-ubuntu-24.04-amd64.tar.gz` — built on Ubuntu 24.04
+            - `ersavebackup-debian-13-amd64.tar.gz` — built on Debian 13
+            - `ersavebackup-arch-amd64.tar.gz` — built on Arch Linux (rolling)
 
-            Both builds are compiled with `-o:speed -no-bounds-check`.
+            Binaries tend to work on any distro newer than the one they were
+            built on. If none of them run cleanly for you, clone the repo and
+            `./build.sh` — it's a single Odin compile.
+
+            **Windows (x86_64):** extract `ersavebackup-windows-amd64.zip` and run
+            `ersavebackup.exe`. `SDL3.dll` is bundled alongside. You need a Vulkan
+            loader, which comes with any recent GPU driver — if `vulkaninfo` works
+            in a command prompt you're set.
+
+            All builds compiled with `-o:speed -no-bounds-check`.
