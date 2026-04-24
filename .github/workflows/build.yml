@@ -36,13 +36,13 @@ jobs:
           if command -v apt-get >/dev/null; then
             apt-get update
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-              build-essential ca-certificates curl git libvulkan-dev tar xz-utils unzip
+              build-essential ca-certificates clang curl git libvulkan-dev tar xz-utils unzip
           elif command -v pacman >/dev/null; then
             # Fresh arch containers ship stale signing keys — refresh first.
             pacman -Sy --noconfirm
             pacman -S --noconfirm --needed archlinux-keyring
             pacman -Syu --noconfirm --needed \
-              base-devel ca-certificates curl git tar unzip \
+              base-devel ca-certificates clang curl git tar unzip \
               vulkan-headers vulkan-icd-loader
           else
             echo "Unsupported distro — no apt-get or pacman found" >&2
