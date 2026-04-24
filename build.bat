@@ -30,7 +30,7 @@ if "%ACTION%"=="" set ACTION=build
 
 if not exist build mkdir build
 
-odin build . -collection:gui="%GUI_PATH%" -out:"build\ersavebackup.exe"
+odin build . -collection:gui="%GUI_PATH%" -out:"build\ersavebackup.exe" -subsystem:windows
 if errorlevel 1 exit /b 1
 
 REM Copy SDL3.dll from Odin's vendor tree next to the exe.

@@ -151,7 +151,7 @@ jobs:
         run: |
           cd ERSaveBackup
           if not exist build mkdir build
-          odin build . -collection:gui=..\Skald -out:build\ersavebackup.exe -o:speed -no-bounds-check
+          odin build . -collection:gui=..\Skald -out:build\ersavebackup.exe -o:speed -no-bounds-check -subsystem:windows
           for /f "delims=" %%I in ('where odin') do set ODIN_EXE=%%I
           for %%I in ("%ODIN_EXE%") do set ODIN_ROOT=%%~dpI
           copy /Y "%ODIN_ROOT%vendor\sdl3\SDL3.dll" build\
