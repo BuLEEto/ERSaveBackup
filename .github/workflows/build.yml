@@ -1,0 +1,174 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Tokens for authenticated GitHub API calls (raises the rate limit
+# from 60 to 1000 requests/hour, which matters when several jobs hit
+# api.github.com in parallel).
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  linux:
+    name: linux / ${{ matrix.image }}
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - ubuntu:24.04
+          - debian:12
+          - debian:13
+          - archlinux:latest
+
+    steps:
+      # Bootstrap: install the minimum packages the rest of the workflow
+      # needs (git for checkout, curl/tar/unzip to fetch Odin, libvulkan-dev
+      # so the Odin vendor:vulkan bindings link).
+      - name: Install OS prereqs
+        shell: bash
+        run: |
+          set -eux
+          if command -v apt-get >/dev/null; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              ca-certificates curl git libvulkan-dev tar xz-utils unzip
+          elif command -v pacman >/dev/null; then
+            # Fresh arch containers ship stale signing keys — refresh first.
+            pacman -Sy --noconfirm
+            pacman -S --noconfirm --needed archlinux-keyring
+            pacman -Syu --noconfirm --needed \
+              ca-certificates curl git tar unzip \
+              vulkan-headers vulkan-icd-loader
+          else
+            echo "Unsupported distro — no apt-get or pacman found" >&2
+            exit 1
+          fi
+
+      - name: Checkout ERSaveBackup
+        uses: actions/checkout@v4
+        with:
+          path: ERSaveBackup
+
+      - name: Checkout Skald
+        uses: actions/checkout@v4
+        with:
+          repository: BuLEEto/Skald
+          path: Skald
+
+      # Self-contained Odin install: query GitHub's release API, pick the
+      # first Linux amd64 asset, extract to /opt/odin and prepend to PATH.
+      - name: Install Odin
+        shell: bash
+        run: |
+          set -eux
+          API="https://api.github.com/repos/odin-lang/Odin/releases/latest"
+          ASSET=$(curl -fsSL \
+                    -H "Authorization: Bearer $GH_TOKEN" \
+                    -H "Accept: application/vnd.github+json" \
+                    "$API" \
+                  | grep -Eo '"browser_download_url": *"[^"]+"' \
+                  | cut -d '"' -f 4 \
+                  | grep -i linux \
+                  | grep -Ei 'amd64|x86_64' \
+                  | head -n 1)
+          if [ -z "$ASSET" ]; then
+            echo "No linux/amd64 Odin asset found" >&2
+            exit 1
+          fi
+          echo "Downloading $ASSET"
+          curl -fsSL -o /tmp/odin.archive "$ASSET"
+          mkdir -p /opt/odin
+          case "$ASSET" in
+            *.tar.gz|*.tgz)  tar -xzf /tmp/odin.archive -C /opt/odin ;;
+            *.tar.xz)        tar -xJf /tmp/odin.archive -C /opt/odin ;;
+            *.zip)           unzip -q /tmp/odin.archive -d /opt/odin ;;
+            *) echo "Unknown archive format: $ASSET" >&2; exit 1 ;;
+          esac
+          # Most Odin releases extract into a single nested directory. Flatten
+          # so /opt/odin/odin is the binary regardless of layout.
+          if [ ! -x /opt/odin/odin ]; then
+            inner=$(find /opt/odin -maxdepth 2 -name odin -type f -executable | head -n 1)
+            if [ -n "$inner" ]; then
+              cp -r "$(dirname "$inner")"/. /opt/odin/
+            fi
+          fi
+          chmod +x /opt/odin/odin || true
+          echo "/opt/odin" >> "$GITHUB_PATH"
+
+      - name: Odin version
+        shell: bash
+        run: odin version
+
+      - name: Build
+        shell: bash
+        run: |
+          cd ERSaveBackup
+          ./build.sh
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout ERSaveBackup
+        uses: actions/checkout@v4
+        with:
+          path: ERSaveBackup
+
+      - name: Checkout Skald
+        uses: actions/checkout@v4
+        with:
+          repository: BuLEEto/Skald
+          path: Skald
+
+      # Windows counterpart of the Install Odin step above. Pulls the latest
+      # Windows amd64 release, extracts to C:\odin and adds it to PATH.
+      - name: Install Odin
+        shell: pwsh
+        run: |
+          $headers = @{
+            'Accept'        = 'application/vnd.github+json'
+            'Authorization' = "Bearer $env:GH_TOKEN"
+          }
+          $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/odin-lang/Odin/releases/latest' -Headers $headers
+          $asset = $release.assets | Where-Object {
+            ($_.name -match 'windows' -or $_.name -match 'win') -and
+            ($_.name -match 'amd64' -or $_.name -match 'x64' -or $_.name -match 'x86_64')
+          } | Select-Object -First 1
+          if (-not $asset) { throw "No Windows amd64 Odin asset found" }
+          Write-Host "Downloading $($asset.name)"
+          $tmp = Join-Path $env:RUNNER_TEMP 'odin.zip'
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmp
+          New-Item -ItemType Directory -Force -Path 'C:\odin' | Out-Null
+          Expand-Archive -Path $tmp -DestinationPath 'C:\odin' -Force
+          # Flatten if the zip has a single top-level directory.
+          if (-not (Test-Path 'C:\odin\odin.exe')) {
+            $inner = Get-ChildItem 'C:\odin' -Directory | Select-Object -First 1
+            if ($inner) {
+              Get-ChildItem $inner.FullName -Force | Move-Item -Destination 'C:\odin' -Force
+              Remove-Item $inner.FullName -Force -Recurse
+            }
+          }
+          'C:\odin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Odin version
+        shell: pwsh
+        run: C:\odin\odin.exe version
+
+      # Make cl.exe, link.exe, etc. available on PATH. build.bat's header
+      # comment tells local users to launch from a Developer prompt; this
+      # action does the equivalent inside the runner.
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Build
+        shell: cmd
+        run: |
+          cd ERSaveBackup
+          call build.bat
