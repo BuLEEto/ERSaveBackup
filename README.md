@@ -64,6 +64,7 @@ The Windows script also copies `SDL3.dll` out of Odin's `vendor\sdl3\` and drops
 
 ## A few things worth knowing
 
+- The green tick next to a profile in the list means auto-backup is *armed* for that profile — auto-backup is enabled and the interval is greater than zero. It doesn't mean a backup is happening right now; actual copies only fire while `eldenring.exe` is running.
 - Don't restore while Elden Ring is running. The app blocks this on purpose: copying over a save file the game has open is how saves get corrupted.
 - Pre-restore snapshots (`*_prerestore_*` files in your backup folder) don't count towards the per-profile max-backups cap, so restoring doesn't push older normal backups out. They auto-delete a week after they were taken.
 - Timestamps in filenames are in your local time, not UTC. Your OS timezone is used.
