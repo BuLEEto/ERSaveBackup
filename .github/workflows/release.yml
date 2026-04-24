@@ -1,0 +1,178 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  linux:
+    name: Linux amd64
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    steps:
+      - name: Install prereqs
+        shell: bash
+        run: |
+          set -eux
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            build-essential ca-certificates clang cmake curl git tar xz-utils unzip \
+            libvulkan-dev \
+            libx11-dev libxcursor-dev libxfixes-dev libxrandr-dev libxi-dev
+
+      - name: Build and install SDL3
+        shell: bash
+        run: |
+          set -eux
+          git clone --depth 1 --branch release-3.2.14 https://github.com/libsdl-org/SDL /tmp/SDL
+          cmake -S /tmp/SDL -B /tmp/SDL/build -DCMAKE_BUILD_TYPE=Release -DSDL_TEST_LIBRARY=OFF
+          cmake --build /tmp/SDL/build -j"$(nproc)"
+          cmake --install /tmp/SDL/build --prefix /usr/local
+          ldconfig
+
+      - uses: actions/checkout@v4
+        with: { path: ERSaveBackup }
+
+      - uses: actions/checkout@v4
+        with:
+          repository: BuLEEto/Skald
+          path: Skald
+
+      - name: Install Odin
+        shell: bash
+        run: |
+          set -eux
+          API="https://api.github.com/repos/odin-lang/Odin/releases/latest"
+          ASSET=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API" \
+                  | grep -Eo '"browser_download_url": *"[^"]+"' | cut -d '"' -f 4 \
+                  | grep -i linux | grep -Ei 'amd64|x86_64' | head -n 1)
+          curl -fsSL -o /tmp/odin.archive "$ASSET"
+          mkdir -p /opt/odin
+          case "$ASSET" in
+            *.tar.gz|*.tgz) tar -xzf /tmp/odin.archive -C /opt/odin ;;
+            *.tar.xz)       tar -xJf /tmp/odin.archive -C /opt/odin ;;
+            *.zip)          unzip -q /tmp/odin.archive -d /opt/odin ;;
+          esac
+          if [ ! -x /opt/odin/odin ]; then
+            inner=$(find /opt/odin -maxdepth 2 -name odin -type f -executable | head -n 1)
+            [ -n "$inner" ] && cp -r "$(dirname "$inner")"/. /opt/odin/
+          fi
+          echo "/opt/odin" >> "$GITHUB_PATH"
+
+      - name: Compile Odin vendor libs
+        shell: bash
+        run: make -C /opt/odin/vendor/stb/src
+
+      - name: Build release binary
+        shell: bash
+        run: |
+          cd ERSaveBackup
+          mkdir -p build
+          odin build . -collection:gui=../Skald -out:./build/ersavebackup -o:speed -no-bounds-check
+
+      - name: Package
+        shell: bash
+        run: |
+          cd ERSaveBackup/build
+          tar -czf ersavebackup-linux-amd64.tar.gz ersavebackup
+          ls -la
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: ERSaveBackup/build/ersavebackup-linux-amd64.tar.gz
+
+  windows:
+    name: Windows amd64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: ERSaveBackup }
+
+      - uses: actions/checkout@v4
+        with:
+          repository: BuLEEto/Skald
+          path: Skald
+
+      - name: Install Odin
+        shell: pwsh
+        run: |
+          $headers = @{ 'Accept' = 'application/vnd.github+json'; 'Authorization' = "Bearer $env:GH_TOKEN" }
+          $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/odin-lang/Odin/releases/latest' -Headers $headers
+          $asset = $release.assets | Where-Object { ($_.name -match 'windows' -or $_.name -match 'win') -and ($_.name -match 'amd64|x64|x86_64') } | Select-Object -First 1
+          $tmp = Join-Path $env:RUNNER_TEMP 'odin.zip'
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tmp
+          New-Item -ItemType Directory -Force -Path 'C:\odin' | Out-Null
+          Expand-Archive -Path $tmp -DestinationPath 'C:\odin' -Force
+          if (-not (Test-Path 'C:\odin\odin.exe')) {
+            $inner = Get-ChildItem 'C:\odin' -Directory | Select-Object -First 1
+            if ($inner) {
+              Get-ChildItem $inner.FullName -Force | Move-Item -Destination 'C:\odin' -Force
+              Remove-Item $inner.FullName -Force -Recurse
+            }
+          }
+          'C:\odin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - uses: ilammy/msvc-dev-cmd@v1
+        with: { arch: x64 }
+
+      - name: Build release binary
+        shell: cmd
+        run: |
+          cd ERSaveBackup
+          if not exist build mkdir build
+          odin build . -collection:gui=..\Skald -out:build\ersavebackup.exe -o:speed -no-bounds-check
+          for /f "delims=" %%I in ('where odin') do set ODIN_EXE=%%I
+          for %%I in ("%ODIN_EXE%") do set ODIN_ROOT=%%~dpI
+          copy /Y "%ODIN_ROOT%vendor\sdl3\SDL3.dll" build\
+
+      - name: Package
+        shell: pwsh
+        run: |
+          cd ERSaveBackup\build
+          Compress-Archive -Path ersavebackup.exe, SDL3.dll -DestinationPath ersavebackup-windows-amd64.zip
+          Get-ChildItem
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: ERSaveBackup/build/ersavebackup-windows-amd64.zip
+
+  publish:
+    name: Publish release
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist }
+
+      - name: List artefacts
+        run: ls -la dist dist/*
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/linux/ersavebackup-linux-amd64.tar.gz
+            dist/windows/ersavebackup-windows-amd64.zip
+          body: |
+            ## Installing
+
+            **Linux (x86_64):** extract the tarball and run the binary. You need
+            `libSDL3` (≥ 3.2.10) and a working Vulkan loader installed — both come
+            from recent GPU drivers, or install your distro's `libsdl3` / `vulkan`
+            packages. The binary was built against glibc from Ubuntu 24.04, so
+            anything that old or newer should run it.
+
+            **Windows (x86_64):** extract the zip and run `ersavebackup.exe`.
+            `SDL3.dll` is bundled alongside. You need a Vulkan loader, which
+            comes with any recent GPU driver — if `vulkaninfo` works in a
+            command prompt you're set.
+
+            Both builds are compiled with `-o:speed -no-bounds-check`.
