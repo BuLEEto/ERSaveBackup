@@ -151,13 +151,9 @@ update :: proc(s: State, msg: Msg) -> (State, skald.Command(Msg)) {
 		return out, {}
 
 	case Open_File_Dialog_Browse:
-		return out, skald.cmd_open_file_dialog(
-			[]skald.File_Filter{
-				{name = "Elden Ring saves", pattern = "sl2;co2;rd2"},
-				{name = "All files", pattern = "*"},
-			},
-			browse_to_msg,
-		)
+		// Filters disabled: the multi-filter path crashes SDL3's IFileDialog
+		// on Windows. Revisit once that's fixed upstream.
+		return out, skald.cmd_open_file_dialog(nil, browse_to_msg)
 
 	case File_Dialog_Browse_Result:
 		if !v.cancelled && len(v.path) > 0 {
