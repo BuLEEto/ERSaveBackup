@@ -151,20 +151,12 @@ update :: proc(s: State, msg: Msg) -> (State, skald.Command(Msg)) {
 		return out, {}
 
 	case Open_File_Dialog_Browse:
-		// SDL3's IFileDialog backend on Windows crashes when we pass a
-		// filter list, so we skip filters there and fall back to "all
-		// files." Linux / macOS get the typed picker as intended.
-		when ODIN_OS == .Windows {
-			return out, skald.cmd_open_file_dialog(nil, browse_to_msg)
-		} else {
-			return out, skald.cmd_open_file_dialog(
-				[]skald.File_Filter{
-					{name = "Elden Ring saves", pattern = "sl2;co2;rd2"},
-					{name = "All files", pattern = "*"},
-				},
-				browse_to_msg,
-			)
-		}
+		// SDL3's file-dialog filter handling is inconsistent across
+		// backends — IFileDialog on Windows crashes with our list, and
+		// xdg-desktop-portal on Linux silently drops the dialog. Pass
+		// nil and let the user see all files; an Elden Ring save folder
+		// only contains a handful anyway.
+		return out, skald.cmd_open_file_dialog(nil, browse_to_msg)
 
 	case File_Dialog_Browse_Result:
 		if !v.cancelled && len(v.path) > 0 {
