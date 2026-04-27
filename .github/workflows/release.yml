@@ -34,7 +34,10 @@ jobs:
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
               build-essential ca-certificates clang cmake curl git patchelf tar xz-utils unzip \
               libvulkan-dev \
-              libx11-dev libxcursor-dev libxfixes-dev libxrandr-dev libxi-dev
+              libx11-dev libxcursor-dev libxfixes-dev libxrandr-dev libxi-dev libxext-dev \
+              libdbus-1-dev libwayland-dev libxkbcommon-dev libudev-dev \
+              libdecor-0-dev libpulse-dev libgbm-dev libdrm-dev \
+              wayland-protocols
           elif command -v pacman >/dev/null; then
             pacman -Sy --noconfirm
             pacman -S --noconfirm --needed archlinux-keyring
