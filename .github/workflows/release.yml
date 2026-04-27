@@ -32,14 +32,14 @@ jobs:
           if command -v apt-get >/dev/null; then
             apt-get update
             DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-              build-essential ca-certificates clang cmake curl git tar xz-utils unzip \
+              build-essential ca-certificates clang cmake curl git patchelf tar xz-utils unzip \
               libvulkan-dev \
               libx11-dev libxcursor-dev libxfixes-dev libxrandr-dev libxi-dev
           elif command -v pacman >/dev/null; then
             pacman -Sy --noconfirm
             pacman -S --noconfirm --needed archlinux-keyring
             pacman -Syu --noconfirm --needed \
-              base-devel ca-certificates clang cmake curl git tar unzip \
+              base-devel ca-certificates clang cmake curl git patchelf tar unzip \
               vulkan-headers vulkan-icd-loader \
               libx11 libxcursor libxfixes libxrandr libxi sdl3
           fi
@@ -100,11 +100,31 @@ jobs:
           mkdir -p build
           odin build . -collection:gui=../Skald -out:./build/ersavebackup -o:speed -no-bounds-check
 
+      # Bundle libSDL3.so.0 next to the binary and set RPATH=$ORIGIN so the
+      # loader checks the binary's own directory before system paths. This
+      # makes the tarball self-contained — users on distros without SDL3 in
+      # their package repos (Ubuntu 24.04, Debian 12, etc.) don't need to
+      # install or build SDL3 themselves.
+      - name: Bundle SDL3
+        shell: bash
+        run: |
+          set -eux
+          cd ERSaveBackup/build
+          patchelf --set-rpath '$ORIGIN' ersavebackup
+          sdl_lib=$(ldd ersavebackup | awk '/libSDL3\.so/ {print $3}' | head -n 1)
+          if [ -z "$sdl_lib" ] || [ ! -e "$sdl_lib" ]; then
+            echo "libSDL3.so not found in linker output" >&2
+            ldd ersavebackup
+            exit 1
+          fi
+          cp -L "$sdl_lib" libSDL3.so.0
+          echo "Bundled $(basename "$sdl_lib") from $sdl_lib"
+
       - name: Package
         shell: bash
         run: |
           cd ERSaveBackup/build
-          tar -czf ersavebackup-${{ matrix.target }}.tar.gz ersavebackup
+          tar -czf ersavebackup-${{ matrix.target }}.tar.gz ersavebackup libSDL3.so.0
           ls -la
 
       - uses: actions/upload-artifact@v4
@@ -191,17 +211,17 @@ jobs:
 
             Pick the download that matches your system.
 
-            **Linux (x86_64):** extract the tarball and run the binary. You need
-            `libSDL3` (≥ 3.2.10) and a Vulkan loader installed — both come from
-            recent GPU drivers, or from your distro's `libsdl3` / `vulkan` packages.
+            **Linux (x86_64):** extract the tarball and run the binary.
+            `libSDL3.so.0` is bundled inside, so you don't need SDL3 in your
+            package manager. You still need a Vulkan loader, which comes with
+            any recent GPU driver.
 
             - `ersavebackup-ubuntu-24.04-amd64.tar.gz` — built on Ubuntu 24.04
             - `ersavebackup-debian-13-amd64.tar.gz` — built on Debian 13
             - `ersavebackup-arch-amd64.tar.gz` — built on Arch Linux (rolling)
 
-            Binaries tend to work on any distro newer than the one they were
-            built on. If none of them run cleanly for you, clone the repo and
-            `./build.sh` — it's a single Odin compile.
+            Pick the one closest to your distro. If none run cleanly, clone
+            the repo and `./build.sh` — it's a single Odin compile.
 
             **Windows (x86_64):** extract `ersavebackup-windows-amd64.zip` and run
             `ersavebackup.exe`. `SDL3.dll` is bundled alongside. You need a Vulkan
