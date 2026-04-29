@@ -57,7 +57,12 @@ jobs:
           if apt-get install -y --no-install-recommends libsdl3-dev 2>/dev/null; then
             echo "libsdl3-dev installed from apt"; exit 0
           fi
-          git clone --depth 1 --branch release-3.2.14 https://github.com/libsdl-org/SDL /tmp/SDL
+          # Pinned to 3.2.10 — 3.2.14 had a Linux file-dialog regression
+          # where filtered open dialogs would silently fail to appear
+          # (folder picker still worked). Reproduced on Ubuntu 24.04 with
+          # the bundled tarball; downgrading restored the file picker.
+          # Bump cautiously and re-test the file picker on every release.
+          git clone --depth 1 --branch release-3.2.10 https://github.com/libsdl-org/SDL /tmp/SDL
           cmake -S /tmp/SDL -B /tmp/SDL/build -DCMAKE_BUILD_TYPE=Release -DSDL_TEST_LIBRARY=OFF
           cmake --build /tmp/SDL/build -j"$(nproc)"
           cmake --install /tmp/SDL/build --prefix /usr/local

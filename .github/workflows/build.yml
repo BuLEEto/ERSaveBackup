@@ -68,7 +68,8 @@ jobs:
           if apt-get install -y --no-install-recommends libsdl3-dev 2>/dev/null; then
             echo "libsdl3-dev installed from apt"; exit 0
           fi
-          SDL_VER="release-3.2.14"
+          # Pinned: see release.yml for the 3.2.14 file-dialog regression note.
+          SDL_VER="release-3.2.10"
           git clone --depth 1 --branch "$SDL_VER" https://github.com/libsdl-org/SDL /tmp/SDL
           cmake -S /tmp/SDL -B /tmp/SDL/build \
             -DCMAKE_BUILD_TYPE=Release -DSDL_TEST_LIBRARY=OFF
