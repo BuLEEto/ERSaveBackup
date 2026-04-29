@@ -18,7 +18,16 @@ REM The SDL3 runtime DLL is copied next to the built .exe automatically.
 setlocal
 cd /d %~dp0
 
-if "%GUI_PATH%"=="" set GUI_PATH=%~dp0..\Skald
+REM Resolve GUI_PATH to an absolute path. Using `%~dp0..\Skald` directly
+REM produces a string with a literal `..` segment, which `if exist` and
+REM PowerShell `.\build.bat` invocations don't always resolve reliably
+REM (especially with spaces in the path). `for %%I ... %%~fI` forces
+REM cmd to canonicalise the path — drive letter, no `..`, no trailing
+REM slash. Skip the default if the caller already set GUI_PATH.
+if defined GUI_PATH goto skip_gui_path_default
+for %%I in ("%~dp0..\Skald") do set GUI_PATH=%%~fI
+:skip_gui_path_default
+
 if not exist "%GUI_PATH%\skald" (
     echo error: Skald not found at %GUI_PATH%
     echo        set GUI_PATH to your Skald checkout, or clone it next to this repo.
