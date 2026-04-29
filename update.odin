@@ -151,12 +151,20 @@ update :: proc(s: State, msg: Msg) -> (State, skald.Command(Msg)) {
 		return out, {}
 
 	case Open_File_Dialog_Browse:
-		// SDL3's file-dialog filter handling is inconsistent across
-		// backends — IFileDialog on Windows crashes with our list, and
-		// xdg-desktop-portal on Linux silently drops the dialog. Pass
-		// nil and let the user see all files; an Elden Ring save folder
-		// only contains a handful anyway.
-		return out, skald.cmd_open_file_dialog(nil, browse_to_msg)
+		// Re-testing whether SDL3's file-dialog filter bugs are fixed
+		// upstream. Historical issues:
+		//   - Windows IFileDialog crashed with our filter list
+		//   - Linux xdg-desktop-portal silently dropped the dialog
+		// Devuan + SDL 3.2.10 + Ubuntu 24.04 + SDL 3.2.10 confirmed
+		// working; Windows still to verify. Revert this commit if it
+		// crashes again.
+		return out, skald.cmd_open_file_dialog(
+			[]skald.File_Filter{
+				{name = "Elden Ring saves", pattern = "sl2;co2;rd2"},
+				{name = "All files",        pattern = "*"},
+			},
+			browse_to_msg,
+		)
 
 	case File_Dialog_Browse_Result:
 		if !v.cancelled && len(v.path) > 0 {
