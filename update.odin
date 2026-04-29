@@ -151,13 +151,11 @@ update :: proc(s: State, msg: Msg) -> (State, skald.Command(Msg)) {
 		return out, {}
 
 	case Open_File_Dialog_Browse:
-		return out, skald.cmd_open_file_dialog(
-			[]skald.File_Filter{
-				{name = "Elden Ring saves", pattern = "sl2;co2;rd2"},
-				{name = "All files",        pattern = "*"},
-			},
-			browse_to_msg,
-		)
+		// SDL3's filtered file-dialog code is unreliable on some Linux
+		// desktops (silent drop on Pop!_OS COSMIC, dbus crash even with
+		// the zenity backend forced). Pass nil; an Elden Ring save
+		// folder only contains a handful of files anyway.
+		return out, skald.cmd_open_file_dialog(nil, browse_to_msg)
 
 	case File_Dialog_Browse_Result:
 		if !v.cancelled && len(v.path) > 0 {
