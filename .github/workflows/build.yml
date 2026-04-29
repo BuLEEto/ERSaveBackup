@@ -20,8 +20,11 @@ jobs:
       fail-fast: false
       matrix:
         image:
+          # Debian 12 dropped: glibc 2.36 is at the edge of what current
+          # Odin nightly's prebuilt linux binary needs, and the install
+          # step is flaky. Release CI already excludes Debian 12, so
+          # users on it can upgrade or build from source manually.
           - ubuntu:24.04
-          - debian:12
           - debian:13
           - archlinux:latest
 
