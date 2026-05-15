@@ -15,6 +15,7 @@ fi
 mkdir -p build
 odin build . \
     -collection:gui="$GUI_PATH" \
+    -define:SKALD_RUNA=true \
     -out:./build/ersavebackup
 
 if [[ "${1:-build}" == "run" ]]; then
